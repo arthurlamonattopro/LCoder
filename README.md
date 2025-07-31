@@ -2,6 +2,8 @@
 
 ## Resumo das Melhorias
 
+https://github.com/arthurlamonattopro/LCoder/releases/
+
 O IDE agora possui um **terminal real** que funciona como:
 - **Windows**: `cmd.exe`
 - **Linux/Unix**: `bash` (ou shell padrão do sistema)
