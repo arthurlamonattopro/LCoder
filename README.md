@@ -1,12 +1,34 @@
-# IDE Multi-Linguagem - Terminal Real Implementado
-
-## Resumo das Melhorias
-
 https://github.com/arthurlamonattopro/LCoder/releases/
+# Multi-Language IDE Modular
 
-O IDE agora possui um **terminal real** que funciona como:
-- **Windows**: `cmd.exe`
-- **Linux/Unix**: `bash` (ou shell padrão do sistema)
+Esta é uma versão refatorada e modularizada da IDE Multi-Linguagem. O código foi dividido em componentes lógicos para facilitar a manutenção e expansão.
+
+## Estrutura de Pastas
+
+- `main.py`: Ponto de entrada da aplicação.
+- `core/`: Contém a lógica central e definições de dados.
+    - `config.py`: Gerenciamento de configurações (JSON).
+    - `languages.py`: Definições das linguagens suportadas (Lua, Python, JS, etc).
+    - `themes.py`: Definições de temas (Dark, Light, Monokai).
+- `ui/`: Componentes da interface gráfica.
+    - `main_window.py`: Janela principal e coordenação da UI.
+    - `editor.py`: Widget do editor com syntax highlighting e autocomplete.
+    - `explorer.py`: Explorador de arquivos (Treeview).
+- `utils/`: Funções utilitárias.
+    - `process_mgr.py`: Gerenciamento de processos externos (execução de código e terminal).
+
+## Requisitos
+
+- `customtkinter`
+- `Pillow` (PIL)
+- `watchdog` (opcional, para monitoramento de arquivos)
+
+## Como Executar
+
+```bash
+python main.py
+```
+
 
 ## Principais Funcionalidades Adicionadas
 
