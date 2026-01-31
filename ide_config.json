@@ -1,0 +1,39 @@
+{
+    "theme": "dark",
+    "current_language": "python",
+    "editor": {
+        "font_family": "Consolas",
+        "font_size": 12,
+        "show_line_numbers": true,
+        "word_wrap": false
+    },
+    "autocomplete": {
+        "enabled": true,
+        "delay": 200
+    },
+    "languages": {
+        "lua": {
+            "path": ""
+        },
+        "python": {
+            "path": ""
+        },
+        "javascript": {
+            "path": ""
+        },
+        "ruby": {
+            "path": ""
+        },
+        "php": {
+            "path": ""
+        },
+        "perl": {
+            "path": ""
+        }
+    },
+    "window": {
+        "width": 1400,
+        "height": 900,
+        "maximized": false
+    }
+}
