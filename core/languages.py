@@ -79,6 +79,31 @@ LANGUAGES = {
         "comment_prefix": "#",
         "string_quotes": ["\"", "\'"],
         "number_pattern": r'\b\d+(\.\d+)?\b'
+    },
+    "cpp": {
+        "name": "C++",
+        "extensions": [".cpp", ".hpp", ".c", ".h"],
+        "icon": "⚙️",
+        "executable": "g++",
+        "run_args": ["{file}", "-o", "{file}.out", "&&", "./{file}.out"],
+        "keywords": ["int", "float", "double", "char", "void", "if", "else", "for", "while", "do", "switch", "case", "default", "break", "continue", "return", "class", "struct", "public", "private", "protected", "namespace", "using", "include", "new", "delete", "try", "catch", "throw", "true", "false"],
+        "functions": ["main", "printf", "scanf", "cout", "cin", "endl", "vector", "string", "map", "set", "push_back", "size", "begin", "end"],
+        "comment_prefix": "//",
+        "string_quotes": ["\"", "\'"],
+        "number_pattern": r'\b\d+(\.\d+)?\b'
+    },
+    "html": {
+        "name": "HTML",
+        "extensions": [".html", ".htm"],
+        "icon": "🌐",
+        "executable": "firefox",
+        "run_args": ["{file}"],
+        "repl_args": [],
+        "keywords": ["html", "head", "title", "body", "div", "span", "h1", "h2", "h3", "h4", "h5", "h6", "p", "a", "img", "ul", "ol", "li", "table", "tr", "td", "th", "form", "input", "button", "script", "style", "link", "meta"],
+        "functions": ["id", "class", "href", "src", "alt", "style", "type", "value", "name", "target", "rel", "charset"],
+        "comment_prefix": "<!--",
+        "string_quotes": ["\"", "\'"],
+        "number_pattern": r'\b\d+(\.\d+)?\b'
     }
 }
 

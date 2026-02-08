@@ -29,6 +29,12 @@
         },
         "perl": {
             "path": ""
+        },
+        "cpp": {
+            "path": ""
+        },
+        "html": {
+            "path": ""
         }
     },
     "window": {

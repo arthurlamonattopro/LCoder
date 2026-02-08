@@ -61,9 +61,10 @@ class ProcessManager:
                 executable = shutil.which(lang_config["executable"]) or lang_config["executable"]
 
         try:
-            args = [executable]
-            if language == "python": args.append("-i")
-            elif language == "lua": args.append("-i")
+            if os.name == 'nt':
+                args = ["cmd.exe"]
+            else:
+                args = ["/bin/bash"]
             
             self.terminal_process = subprocess.Popen(
                 args, 
@@ -72,7 +73,8 @@ class ProcessManager:
                 stderr=subprocess.STDOUT, 
                 text=True, 
                 bufsize=1,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                env=os.environ
             )
             
             def listen():

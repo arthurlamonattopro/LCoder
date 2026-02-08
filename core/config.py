@@ -21,7 +21,9 @@ DEFAULT_CONFIG = {
         "javascript": {"path": ""},
         "ruby": {"path": ""},
         "php": {"path": ""},
-        "perl": {"path": ""}
+        "perl": {"path": ""},
+        "cpp": {"path": ""},
+        "html": {"path": ""}
     },
     "window": {
         "width": 1400,
