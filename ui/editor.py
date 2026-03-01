@@ -1,322 +1,359 @@
 import re
-import tkinter as tk
+
+from PySide6.QtCore import QRect, QSize, Qt, QStringListModel
+from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextFormat
+from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QTextEdit, QWidget
+
 from core.languages import LANGUAGES
 from core.themes import THEMES, UI_CONFIG
 
-class LineNumbers(tk.Canvas):
-    def __init__(self, master, text_widget, **kwargs):
-        # Canvas doesn't support 'foreground' or 'fg' as a direct option in some versions/platforms
-        # We'll handle the text color manually
-        self.text_color = kwargs.pop('foreground', kwargs.pop('fg', 'black'))
-        super().__init__(master, **kwargs)
-        self.text_widget = text_widget
-        self.redraw()
 
-    def redraw(self):
-        self.delete("all")
-        i = self.text_widget.index("@0,0")
-        while True:
-            dline = self.text_widget.dlineinfo(i)
-            if dline is None: break
-            y = dline[1]
-            linenum = str(i).split(".")[0]
-            self.create_text(2, y, anchor="nw", text=linenum, fill=self.text_color, font=self.text_widget.cget("font"))
-            i = self.text_widget.index("%s + 1 line" % i)
+class LineNumberArea(QWidget):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.code_editor = editor
 
-class Editor(tk.Frame):
-    def __init__(self, master, config_manager, **kwargs):
-        super().__init__(master)
+    def sizeHint(self):
+        return QSize(self.code_editor.line_number_area_width(), 0)
+
+    def paintEvent(self, event):
+        self.code_editor.line_number_area_paint_event(event)
+
+
+class CodeHighlighter(QSyntaxHighlighter):
+    def __init__(self, document, language_config, theme):
+        super().__init__(document)
+        self.language_config = language_config
+        self.theme = theme
+        self._init_formats()
+
+    def _init_formats(self):
+        syntax = self.theme["syntax"]
+
+        self.keyword_format = QTextCharFormat()
+        self.keyword_format.setForeground(QColor(syntax["keyword"]))
+
+        self.function_format = QTextCharFormat()
+        self.function_format.setForeground(QColor(syntax["function"]))
+
+        self.comment_format = QTextCharFormat()
+        self.comment_format.setForeground(QColor(syntax["comment"]))
+
+        self.string_format = QTextCharFormat()
+        self.string_format.setForeground(QColor(syntax["string"]))
+
+        self.number_format = QTextCharFormat()
+        self.number_format.setForeground(QColor(syntax["number"]))
+
+    def set_config(self, language_config, theme):
+        self.language_config = language_config
+        self.theme = theme
+        self._init_formats()
+
+    def _apply_word_list(self, text, words, fmt):
+        for word in words:
+            for match in re.finditer(r"\\b" + re.escape(word) + r"\\b", text):
+                self.setFormat(match.start(), match.end() - match.start(), fmt)
+
+    def highlightBlock(self, text):
+        if not self.language_config:
+            return
+
+        self._apply_word_list(text, self.language_config.get("keywords", []), self.keyword_format)
+        self._apply_word_list(text, self.language_config.get("functions", []), self.function_format)
+
+        number_pattern = self.language_config.get("number_pattern")
+        if number_pattern:
+            for match in re.finditer(number_pattern, text):
+                self.setFormat(match.start(), match.end() - match.start(), self.number_format)
+
+        for quote in self.language_config.get("string_quotes", []):
+            if quote in ["\"\"\"", "'''"]:
+                continue
+            pattern = re.escape(quote) + r".*?" + re.escape(quote)
+            for match in re.finditer(pattern, text):
+                self.setFormat(match.start(), match.end() - match.start(), self.string_format)
+
+        comment_prefix = self.language_config.get("comment_prefix")
+        if comment_prefix:
+            if comment_prefix == "<!--":
+                idx = text.find("<!--")
+                if idx != -1:
+                    self.setFormat(idx, len(text) - idx, self.comment_format)
+            else:
+                idx = text.find(comment_prefix)
+                if idx != -1:
+                    self.setFormat(idx, len(text) - idx, self.comment_format)
+
+
+class Editor(QPlainTextEdit):
+    def __init__(self, config_manager, parent=None):
+        super().__init__(parent)
         self.config_manager = config_manager
-        self.current_language = self.config_manager.get("current_language")
-        
-        # Remove custom font from kwargs to handle it manually
-        font = kwargs.pop('font', UI_CONFIG["font_code"])
-        
-        # Text widget
-        self.text = tk.Text(self, font=font, relief="flat", padx=10, pady=10, **kwargs)
-        
-        # Line numbers
-        self.line_numbers = LineNumbers(self, self.text, width=40, highlightthickness=0)
-        self.line_numbers.pack(side="left", fill="y")
-        self.text.pack(side="right", fill="both", expand=True)
-        
-        self.autocomplete_window = None
-        self.autocomplete_listbox = None
-        self.autocomplete_start_index = None
-        
-        self.text.bind("<KeyRelease>", self.on_key_release)
-        self.text.bind("<Key>", self.global_key_handler)
-        self.text.bind("<Return>", self.on_return)
-        self.text.bind("<Button-1>", lambda e: self.after(10, self.match_brackets))
-        
-        # Sync line numbers on scroll
-        self.text.bind("<MouseWheel>", lambda e: self.line_numbers.redraw())
-        self.text.bind("<Button-4>", lambda e: self.line_numbers.redraw())
-        self.text.bind("<Button-5>", lambda e: self.line_numbers.redraw())
-        
-        # Expose text methods
-        self.insert = self.text.insert
-        self.delete = self.text.delete
-        self.get = self.text.get
-        self.index = self.text.index
-        self.tag_add = self.text.tag_add
-        self.tag_configure = self.text.tag_configure
-        self.tag_remove = self.text.tag_remove
-        self.tag_names = self.text.tag_names
-        self.see = self.text.see
-        self.mark_set = self.text.mark_set
+        self.current_language = self.config_manager.get("current_language") or "python"
 
-    def config(self, **kwargs):
-        # Handle background and foreground for sub-widgets
-        if 'bg' in kwargs:
-            self.line_numbers.config(bg=kwargs['bg'])
-        if 'fg' in kwargs:
-            self.line_numbers.text_color = kwargs['fg']
-            self.line_numbers.redraw()
-        if 'foreground' in kwargs:
-            self.line_numbers.text_color = kwargs['foreground']
-            self.line_numbers.redraw()
-            
-        # Filter out options that tk.Text might not like if passed through Editor.config
-        self.text.config(**kwargs)
+        font_name, font_size = UI_CONFIG["font_code"][:2]
+        font = QFont(font_name, font_size)
+        self.setFont(font)
+        self.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
+        self.setLineWrapMode(QPlainTextEdit.NoWrap)
 
-    def configure(self, **kwargs):
-        self.config(**kwargs)
+        self._line_number_bg = QColor("#252526")
+        self._line_number_fg = QColor("#8c8c8c")
+        self._current_line_bg = QColor("#2a2d2e")
+        self._bracket_bg = QColor("#264f78")
 
-    def yview(self, *args):
-        self.text.yview(*args)
-        self.line_numbers.redraw()
+        self.line_number_area = LineNumberArea(self)
+        self.blockCountChanged.connect(self.update_line_number_area_width)
+        self.updateRequest.connect(self.update_line_number_area)
+        self.cursorPositionChanged.connect(self._on_cursor_moved)
+        self.textChanged.connect(self._on_text_changed)
+        self.update_line_number_area_width(0)
 
-    def xview(self, *args):
-        self.text.xview(*args)
+        lang_config = self.get_current_language_config()
+        theme = THEMES[self.config_manager.get("theme") or "dark"]
+        self.highlighter = CodeHighlighter(self.document(), lang_config, theme)
+
+        self.completer = QCompleter(self)
+        self.completer.setWidget(self)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.completer.activated.connect(self.insert_completion)
+        self._completer_model = QStringListModel(self)
+        self.completer.setModel(self._completer_model)
+        self.update_completer_model()
+
+        self._extra_selections = []
+        self.aplicar_syntax_highlight()
 
     def get_current_language_config(self):
-        return LANGUAGES.get(self.current_language)
+        return LANGUAGES.get(self.current_language, LANGUAGES.get("python"))
+
+    def set_language(self, language):
+        if language in LANGUAGES:
+            self.current_language = language
+            self.update_completer_model()
+            self.aplicar_syntax_highlight()
+
+    def update_completer_model(self):
+        lang = self.get_current_language_config() or {}
+        suggestions = sorted(set(lang.get("keywords", []) + lang.get("functions", [])))
+        self._completer_model.setStringList(suggestions)
+
+    def line_number_area_width(self):
+        digits = len(str(max(1, self.blockCount())))
+        return 12 + self.fontMetrics().horizontalAdvance("9") * digits
+
+    def update_line_number_area_width(self, _):
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+
+    def update_line_number_area(self, rect, dy):
+        if dy:
+            self.line_number_area.scroll(0, dy)
+        else:
+            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
+
+        if rect.contains(self.viewport().rect()):
+            self.update_line_number_area_width(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
+
+    def line_number_area_paint_event(self, event):
+        painter = QPainter(self.line_number_area)
+        painter.fillRect(event.rect(), self._line_number_bg)
+
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        bottom = top + int(self.blockBoundingRect(block).height())
+
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(block_number + 1)
+                painter.setPen(self._line_number_fg)
+                painter.drawText(
+                    0,
+                    top,
+                    self.line_number_area.width() - 4,
+                    self.fontMetrics().height(),
+                    Qt.AlignRight,
+                    number,
+                )
+
+            block = block.next()
+            top = bottom
+            bottom = top + int(self.blockBoundingRect(block).height())
+            block_number += 1
+
+    def apply_theme(self, theme):
+        self._line_number_bg = QColor(theme["sidebar_bg"])
+        self._line_number_fg = QColor(theme["fg"])
+        self._current_line_bg = QColor(theme["entry_bg"])
+        self._bracket_bg = QColor(theme["select_bg"])
+
+        self.setStyleSheet(
+            "QPlainTextEdit {"
+            f"background-color: {theme['editor_bg']};"
+            f"color: {theme['fg']};"
+            f"selection-background-color: {theme['select_bg']};"
+            "border: none;"
+            "padding: 6px;"
+            "}"
+        )
+        self.aplicar_syntax_highlight()
+        self.line_number_area.update()
 
     def aplicar_syntax_highlight(self):
-        lang_config = self.get_current_language_config()
-        if not lang_config:
-            return
+        theme_name = self.config_manager.get("theme") or "dark"
+        theme = THEMES.get(theme_name, THEMES["dark"])
+        self.highlighter.set_config(self.get_current_language_config(), theme)
+        self.highlighter.rehighlight()
+        self._refresh_extra_selections()
 
-        theme_name = self.config_manager.get("theme")
-        theme = THEMES[theme_name]
-        syntax_colors = theme["syntax"]
+    def _on_text_changed(self):
+        self._refresh_extra_selections()
 
-        # Limpa tags existentes
-        for tag in self.tag_names():
-            if tag != "bracket_match":
-                self.tag_remove(tag, "1.0", tk.END)
+    def _on_cursor_moved(self):
+        self._refresh_extra_selections()
 
-        content = self.get("1.0", tk.END)
+    def _refresh_extra_selections(self):
+        selections = []
 
-        # Configura as cores das tags
-        self.tag_configure("keyword", foreground=syntax_colors["keyword"])
-        self.tag_configure("function", foreground=syntax_colors["function"])
-        self.tag_configure("comment", foreground=syntax_colors["comment"])
-        self.tag_configure("string", foreground=syntax_colors["string"])
-        self.tag_configure("number", foreground=syntax_colors["number"])
-        self.tag_configure("bracket_match", background=theme["select_bg"], underline=True)
+        current_line = QTextEdit.ExtraSelection()
+        current_line.format.setBackground(self._current_line_bg)
+        current_line.format.setProperty(QTextFormat.FullWidthSelection, True)
+        current_line.cursor = self.textCursor()
+        current_line.cursor.clearSelection()
+        selections.append(current_line)
 
-        # Comentários
-        prefix = re.escape(lang_config["comment_prefix"])
-        for match in re.finditer(f"{prefix}.*$", content, re.MULTILINE):
-            start = f"1.0 + {match.start()} chars"
-            end = f"1.0 + {match.end()} chars"
-            self.tag_add("comment", start, end)
+        for idx in self._match_bracket_indices():
+            sel = QTextEdit.ExtraSelection()
+            sel.format.setBackground(self._bracket_bg)
+            sel.format.setFontUnderline(True)
+            c = self.textCursor()
+            c.setPosition(idx)
+            c.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, 1)
+            sel.cursor = c
+            selections.append(sel)
 
-        # Strings
-        for quote in lang_config["string_quotes"]:
-            pattern = f"{re.escape(quote)}.*?{re.escape(quote)}"
-            for match in re.finditer(pattern, content, re.DOTALL):
-                start = f"1.0 + {match.start()} chars"
-                end = f"1.0 + {match.end()} chars"
-                self.tag_add("string", start, end)
+        self._extra_selections = selections
+        self.setExtraSelections(selections)
 
-        # Palavras-chave
-        for word in lang_config["keywords"]:
-            pattern = r'\b' + re.escape(word) + r'\b'
-            for match in re.finditer(pattern, content):
-                start = f"1.0 + {match.start()} chars"
-                end = f"1.0 + {match.end()} chars"
-                self.tag_add("keyword", start, end)
+    def _match_bracket_indices(self):
+        text = self.toPlainText()
+        if not text:
+            return []
 
-        # Funções
-        for word in lang_config["functions"]:
-            pattern = r'\b' + re.escape(word) + r'\b'
-            for match in re.finditer(pattern, content):
-                start = f"1.0 + {match.start()} chars"
-                end = f"1.0 + {match.end()} chars"
-                self.tag_add("function", start, end)
+        pos = self.textCursor().position()
+        candidate_positions = []
+        if pos > 0:
+            candidate_positions.append(pos - 1)
+        if pos < len(text):
+            candidate_positions.append(pos)
 
-        # Números
-        for match in re.finditer(lang_config["number_pattern"], content):
-            start = f"1.0 + {match.start()} chars"
-            end = f"1.0 + {match.end()} chars"
-            self.tag_add("number", start, end)
-        
-        self.line_numbers.redraw()
+        for idx in candidate_positions:
+            ch = text[idx]
+            if ch in "()[]{}":
+                match = self._find_matching_bracket(text, idx)
+                if match is not None:
+                    return [idx, match]
+        return []
 
-    def match_brackets(self):
-        self.tag_remove("bracket_match", "1.0", tk.END)
-        pos = self.index(tk.INSERT)
-        
-        # Check character before cursor
-        try:
-            char = self.get(f"{pos}-1c")
-            if char in "([{":
-                self.find_matching(pos, char, 1)
-            elif char in ")]}":
-                self.find_matching(f"{pos}-1c", char, -1)
-        except:
-            pass
-
-    def find_matching(self, pos, char, direction):
+    def _find_matching_bracket(self, text, index):
         pairs = {"(": ")", "[": "]", "{": "}", ")": "(", "]": "[", "}": "{"}
-        target = pairs[char]
-        stack = 1
-        
-        search_pos = pos
-        while True:
-            if direction == 1:
-                search_pos = self.index(f"{search_pos}+1c")
-            else:
-                search_pos = self.index(f"{search_pos}-1c")
-                
-            if search_pos == self.index("1.0") or search_pos == self.index("end"):
-                break
-                
-            curr_char = self.get(search_pos)
-            if curr_char == char:
-                stack += 1
-            elif curr_char == target:
-                stack -= 1
-                if stack == 0:
-                    self.tag_add("bracket_match", pos if direction == 1 else f"{pos}", f"{pos}+1c" if direction == 1 else f"{pos}+1c")
-                    self.tag_add("bracket_match", search_pos, f"{search_pos}+1c")
-                    break
+        openers = "([{"
+        ch = text[index]
+        target = pairs[ch]
 
-    def on_key_release(self, event):
-        if event.keysym in ("Up", "Down", "Left", "Right", "Return", "Escape", "Control_L", "Control_R"):
-            self.line_numbers.redraw()
-            self.match_brackets()
+        if ch in openers:
+            step = 1
+            stack = 1
+            i = index + 1
+            while i < len(text):
+                curr = text[i]
+                if curr == ch:
+                    stack += 1
+                elif curr == target:
+                    stack -= 1
+                    if stack == 0:
+                        return i
+                i += step
+        else:
+            step = -1
+            stack = 1
+            i = index - 1
+            while i >= 0:
+                curr = text[i]
+                if curr == ch:
+                    stack += 1
+                elif curr == target:
+                    stack -= 1
+                    if stack == 0:
+                        return i
+                i += step
+        return None
+
+    def insert_completion(self, completion):
+        cursor = self.textCursor()
+        prefix = self.completer.completionPrefix()
+        if prefix:
+            cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(prefix))
+            cursor.removeSelectedText()
+        cursor.insertText(completion)
+        self.setTextCursor(cursor)
+
+    def text_under_cursor(self):
+        cursor = self.textCursor()
+        cursor.select(QTextCursor.WordUnderCursor)
+        return cursor.selectedText()
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            cursor = self.textCursor()
+            block_text = cursor.block().text()[: cursor.positionInBlock()]
+            indent_match = re.match(r"^\\s*", block_text)
+            indent = indent_match.group(0) if indent_match else ""
+            if block_text.rstrip().endswith(":"):
+                indent += "    "
+            super().keyPressEvent(event)
+            super().insertPlainText(indent)
             return
-        
-        if self.config_manager.get("autocomplete", "enabled"):
-            self.after(self.config_manager.get("autocomplete", "delay"), self.mostrar_autocomplete)
-        
-        self.aplicar_syntax_highlight()
-        self.match_brackets()
-        
-        try:
-            # Find MainWindow in hierarchy
-            curr = self.master
-            while curr and not hasattr(curr, 'atualizar_status'):
-                curr = curr.master
-            if curr:
-                curr.atualizar_status()
-        except:
-            pass
 
-    def on_return(self, event):
-        # Basic auto-indentation
-        pos = self.index(tk.INSERT)
-        line_content = self.get(f"{pos} linestart", pos)
-        indent = re.match(r'^\s*', line_content).group(0)
-        
-        # If line ends with a colon (Python/Ruby style), add extra indent
-        if line_content.strip().endswith(':'):
-            indent += '    '
-            
-        self.insert(pos, '\n' + indent)
-        self.see(tk.INSERT)
-        self.line_numbers.redraw()
-        return "break"
+        if self.completer.popup().isVisible() and event.key() in (
+            Qt.Key_Enter,
+            Qt.Key_Return,
+            Qt.Key_Escape,
+            Qt.Key_Tab,
+            Qt.Key_Backtab,
+        ):
+            event.ignore()
+            return
 
-    def mostrar_autocomplete(self):
-        if self.autocomplete_window:
-            self.autocomplete_window.destroy()
-            self.autocomplete_window = None
+        super().keyPressEvent(event)
 
-        try:
-            pos = self.index(tk.INSERT)
-            line, col = map(int, pos.split('.'))
-            
-            line_content = self.get(f"{line}.0", pos)
-            match = re.search(r'\b(\w+)$', line_content)
-            
-            if not match:
-                return
-                
-            word_start = match.group(1)
-            start_col = match.start()
-            
-            lang_config = self.get_current_language_config()
-            sugestoes = [w for w in lang_config["keywords"] + lang_config["functions"] if w.startswith(word_start)]
-            
-            if not sugestoes:
-                return
+        ctrl_or_shift = event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)
+        if ctrl_or_shift and not event.text():
+            return
 
-            bbox = self.text.bbox(pos)
-            if not bbox:
-                return
-                
-            x, y, _, h = bbox
-            root_x = self.text.winfo_rootx() + x
-            root_y = self.text.winfo_rooty() + y + h
+        prefix = self.text_under_cursor()
+        if len(prefix) < 1:
+            self.completer.popup().hide()
+            return
 
-            self.autocomplete_window = tk.Toplevel(self)
-            self.autocomplete_window.wm_overrideredirect(True)
-            self.autocomplete_window.geometry(f"+{root_x}+{root_y}")
-            
-            theme_name = self.config_manager.get("theme")
-            theme = THEMES[theme_name]
-            
-            self.autocomplete_listbox = tk.Listbox(
-                self.autocomplete_window, 
-                bg=theme["entry_bg"], 
-                fg=theme["fg"], 
-                selectbackground=theme["select_bg"], 
-                activestyle="none",
-                relief="flat",
-                font=UI_CONFIG["font_main"],
-                bd=1
-            )
-            for s in sugestoes:
-                self.autocomplete_listbox.insert(tk.END, s)
-            self.autocomplete_listbox.pack()
-            self.autocomplete_listbox.select_set(0)
-            self.autocomplete_start_index = f"{line}.{start_col}"
-        except:
-            pass
+        if prefix != self.completer.completionPrefix():
+            self.completer.setCompletionPrefix(prefix)
+            self.completer.popup().setCurrentIndex(self.completer.completionModel().index(0, 0))
 
-    def global_key_handler(self, event):
-        if self.autocomplete_window and self.autocomplete_listbox:
-            if event.keysym in ("Return", "Tab"):
-                try:
-                    selecionado = self.autocomplete_listbox.get(self.autocomplete_listbox.curselection())
-                    self.delete(self.autocomplete_start_index, tk.INSERT)
-                    self.insert(self.autocomplete_start_index, selecionado)
-                except:
-                    pass
-                self.autocomplete_window.destroy()
-                self.autocomplete_window = None
-                self.autocomplete_listbox = None
-                self.aplicar_syntax_highlight()
-                return "break"
-            elif event.keysym == "Escape":
-                self.autocomplete_window.destroy()
-                self.autocomplete_window = None
-                self.autocomplete_listbox = None
-                return "break"
-            elif event.keysym in ("Up", "Down"):
-                try:
-                    idx = self.autocomplete_listbox.curselection()[0]
-                    if event.keysym == "Up" and idx > 0:
-                        self.autocomplete_listbox.selection_clear(0, tk.END)
-                        self.autocomplete_listbox.select_set(idx - 1)
-                    elif event.keysym == "Down" and idx < self.autocomplete_listbox.size() - 1:
-                        self.autocomplete_listbox.selection_clear(0, tk.END)
-                        self.autocomplete_listbox.select_set(idx + 1)
-                except:
-                    pass
-                return "break"
+        rect = self.cursorRect()
+        rect.setWidth(
+            self.completer.popup().sizeHintForColumn(0)
+            + self.completer.popup().verticalScrollBar().sizeHint().width()
+        )
+        self.completer.complete(rect)
+
+    def cursor_position(self):
+        cursor = self.textCursor()
+        return cursor.blockNumber() + 1, cursor.columnNumber() + 1

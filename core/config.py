@@ -1,6 +1,6 @@
 import json
 import os
-from tkinter import messagebox
+
 
 DEFAULT_CONFIG = {
     "theme": "dark",
@@ -9,11 +9,11 @@ DEFAULT_CONFIG = {
         "font_family": "Consolas",
         "font_size": 12,
         "show_line_numbers": True,
-        "word_wrap": False
+        "word_wrap": False,
     },
     "autocomplete": {
         "enabled": True,
-        "delay": 200
+        "delay": 200,
     },
     "languages": {
         "lua": {"path": ""},
@@ -23,14 +23,15 @@ DEFAULT_CONFIG = {
         "php": {"path": ""},
         "perl": {"path": ""},
         "cpp": {"path": ""},
-        "html": {"path": ""}
+        "html": {"path": ""},
     },
     "window": {
         "width": 1400,
         "height": 900,
-        "maximized": False
-    }
+        "maximized": False,
+    },
 }
+
 
 class ConfigManager:
     def __init__(self, config_file="ide_config.json"):
@@ -41,11 +42,11 @@ class ConfigManager:
     def load(self):
         try:
             if os.path.exists(self.config_file):
-                with open(self.config_file, 'r', encoding='utf-8') as f:
+                with open(self.config_file, "r", encoding="utf-8") as f:
                     loaded_config = json.load(f)
                     self._merge_config(self.current_config, loaded_config)
-        except Exception as e:
-            print(f"Erro ao carregar configurações: {e}")
+        except Exception as exc:
+            print(f"Erro ao carregar configuracoes: {exc}")
 
     def _merge_config(self, default, loaded):
         for key, value in loaded.items():
@@ -57,10 +58,10 @@ class ConfigManager:
 
     def save(self):
         try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
+            with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(self.current_config, f, indent=4)
-        except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao salvar configurações: {e}")
+        except Exception as exc:
+            print(f"Erro ao salvar configuracoes: {exc}")
 
     def get(self, *keys):
         val = self.current_config

@@ -1,3 +1,3 @@
 Pillow
 watchdog
-customtkinter
+PySide6

@@ -10,7 +10,7 @@ O **LCoder** é um ambiente de desenvolvimento integrado (IDE) leve, modular e m
 
 ## 🎨 Interface e Experiência do Usuário
 
-A interface foi construída utilizando o **CustomTkinter**, proporcionando um visual contemporâneo com suporte nativo a temas e componentes responsivos.
+A interface foi construída utilizando o **PySide6 (Qt)**, proporcionando um visual contemporâneo com suporte a temas e componentes nativos.
 
 | Funcionalidade | Descrição |
 | :--- | :--- |
@@ -47,13 +47,13 @@ Diferente de versões anteriores que utilizavam REPLs limitados, o novo terminal
 
 ### Pré-requisitos
 -   Python 3.8 ou superior.
--   Dependências principais: `customtkinter`, `Pillow`.
+-   Dependências principais: `PySide6`, `Pillow`.
 
 ### Instalação e Execução
 1.  Clone o repositório ou baixe a [última versão](https://github.com/arthurlamonattopro/LCoder/releases/).
 2.  Instale as dependências:
     ```bash
-    pip install customtkinter Pillow
+    pip install PySide6 Pillow
     ```
 3.  Inicie a IDE:
     ```bash
@@ -75,7 +75,7 @@ O executável será gerado na pasta `dist/MultiLanguageIDE/`.
 
 ### No Linux:
 ```bash
-sudo apt install python3-tk
+sudo apt install libgl1
 python3 build.py
 ```
 

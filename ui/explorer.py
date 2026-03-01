@@ -1,132 +1,132 @@
 import os
-import tkinter as tk
-from tkinter import ttk, messagebox
-from PIL import Image, ImageTk
-from core.languages import LANGUAGES
-from core.themes import THEMES
 
-class Explorer(ttk.Treeview):
-    def __init__(self, master, config_manager, **kwargs):
-        super().__init__(master, show="tree", **kwargs)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QTreeWidget, QTreeWidgetItem, QVBoxLayout
+
+from core.languages import LANGUAGES
+
+
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+
+
+class Explorer(QTreeWidget):
+    def __init__(self, config_manager, open_file_callback=None, parent=None):
+        super().__init__(parent)
         self.config_manager = config_manager
+        self.open_file_callback = open_file_callback
         self.root_path = None
-        self.bind("<Double-1>", self.on_double_click)
+
+        self.setHeaderHidden(True)
+        self.itemExpanded.connect(self.on_item_expanded)
+        self.itemDoubleClicked.connect(self.on_item_double_clicked)
 
     def set_root_path(self, path):
         self.root_path = path
         self.refresh()
 
     def refresh(self):
-        if self.root_path:
-            self.montar_arvore(self.root_path)
-
-    def montar_arvore(self, caminho, pai=""):
-        for child in self.get_children(pai):
-            self.delete(child)
-        try:
-            itens = sorted(os.listdir(caminho), key=lambda x: (not os.path.isdir(os.path.join(caminho, x)), x.lower()))
-        except PermissionError:
+        self.clear()
+        if not self.root_path:
             return
-        for item in itens:
-            caminho_completo = os.path.join(caminho, item)
-            if os.path.isdir(caminho_completo):
-                icon = "📁"
-            else:
-                ext = os.path.splitext(item)[1].lower()
-                icon = "📄"
-                for lang_config in LANGUAGES.values():
-                    if ext in lang_config["extensions"]:
-                        icon = lang_config["icon"]
-                        break
-                if ext in ['.txt', '.md']:
-                    icon = "📄"
-                elif ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
-                    icon = "🖼️"
-            
-            node = self.insert(pai, "end", text=f" {icon}  {item}", open=False)
-            if os.path.isdir(caminho_completo):
-                # Placeholder to allow expansion
-                self.insert(node, "end", text="loading...")
-        
-        self.bind("<<TreeviewOpen>>", self.on_open)
+        self._populate_children(None, self.root_path)
 
-    def on_open(self, event):
-        item_id = self.focus()
-        path = self.caminho_do_item(item_id)
-        
-        # Remove placeholder
-        for child in self.get_children(item_id):
-            self.delete(child)
-            
+    def _sorted_items(self, path):
         try:
-            itens = sorted(os.listdir(path), key=lambda x: (not os.path.isdir(os.path.join(path, x)), x.lower()))
-            for item in itens:
-                caminho_completo = os.path.join(path, item)
-                if os.path.isdir(caminho_completo):
-                    icon = "📁"
-                else:
-                    ext = os.path.splitext(item)[1].lower()
-                    icon = "📄"
-                    for lang_config in LANGUAGES.values():
-                        if ext in lang_config["extensions"]:
-                            icon = lang_config["icon"]
-                            break
-                
-                node = self.insert(item_id, "end", text=f" {icon}  {item}", open=False)
-                if os.path.isdir(caminho_completo):
-                    self.insert(node, "end", text="loading...")
-        except:
-            pass
+            items = os.listdir(path)
+        except (PermissionError, FileNotFoundError, OSError):
+            return []
+        return sorted(items, key=lambda x: (not os.path.isdir(os.path.join(path, x)), x.lower()))
+
+    def _icon_for_file(self, file_path):
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in IMAGE_EXTENSIONS:
+            return "🖼️"
+
+        for lang_config in LANGUAGES.values():
+            if ext in lang_config.get("extensions", []):
+                return lang_config.get("icon", "📄")
+
+        return "📄"
+
+    def _populate_children(self, parent_item, path):
+        for name in self._sorted_items(path):
+            full_path = os.path.join(path, name)
+            is_dir = os.path.isdir(full_path)
+            icon = "📁" if is_dir else self._icon_for_file(full_path)
+
+            item = QTreeWidgetItem([f" {icon}  {name}"])
+            item.setData(0, Qt.UserRole, full_path)
+
+            if parent_item is None:
+                self.addTopLevelItem(item)
+            else:
+                parent_item.addChild(item)
+
+            if is_dir:
+                # Placeholder to draw expand indicator before loading directory content.
+                placeholder = QTreeWidgetItem(["loading..."])
+                placeholder.setData(0, Qt.UserRole, None)
+                item.addChild(placeholder)
+
+    def on_item_expanded(self, item):
+        path = item.data(0, Qt.UserRole)
+        if not path or not os.path.isdir(path):
+            return
+
+        if item.childCount() == 1 and item.child(0).data(0, Qt.UserRole) is None:
+            item.takeChild(0)
+            self._populate_children(item, path)
 
     def get_selected_path(self):
-        selecionados = self.selection()
-        if not selecionados:
+        selected = self.selectedItems()
+        if not selected:
             return None
-        return self.caminho_do_item(selecionados[0])
+        return selected[0].data(0, Qt.UserRole)
 
-    def caminho_do_item(self, item_id):
-        partes = []
-        curr = item_id
-        while curr:
-            texto = self.item(curr, "text").strip()
-            # Remove o ícone (assume que o ícone é o primeiro caractere ou parte do texto)
-            # Nosso formato é " 📁  nome"
-            if "  " in texto:
-                nome = texto.split("  ", 1)[1]
-            else:
-                nome = texto
-            partes.insert(0, nome)
-            curr = self.parent(curr)
-        return os.path.join(self.root_path, *partes)
+    def on_item_double_clicked(self, item, _column):
+        path = item.data(0, Qt.UserRole)
+        if not path or not os.path.isfile(path):
+            return
 
-    def on_double_click(self, event):
-        path = self.get_selected_path()
-        if path and os.path.isfile(path):
-            ext = os.path.splitext(path)[1].lower()
-            if ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp"]:
-                self.abrir_imagem(path)
-            else:
-                # master (explorer_container) -> sidebar_frame -> main_window
-                main_window = self.master.master.master
-                if hasattr(main_window, 'abrir_arquivo_por_caminho'):
-                    main_window.abrir_arquivo_por_caminho(path)
+        ext = os.path.splitext(path)[1].lower()
+        if ext in IMAGE_EXTENSIONS:
+            self.abrir_imagem(path)
+            return
+
+        if callable(self.open_file_callback):
+            self.open_file_callback(path)
 
     def abrir_imagem(self, caminho_imagem):
         try:
-            theme_name = self.config_manager.get("theme")
-            theme = THEMES[theme_name]
-            
-            img_window = tk.Toplevel(self)
-            img_window.title(f"Visualizador - {os.path.basename(caminho_imagem)}")
-            img_window.config(bg=theme["bg"])
-            
-            img = Image.open(caminho_imagem)
-            max_size = (800, 600)
-            img.thumbnail(max_size, Image.Resampling.LANCZOS)
-            img_tk = ImageTk.PhotoImage(img)
-            
-            label = tk.Label(img_window, image=img_tk, bg=theme["bg"])
-            label.image = img_tk
-            label.pack(padx=20, pady=20)
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not open image: {e}")
+            pixmap = QPixmap(caminho_imagem)
+            if pixmap.isNull():
+                raise ValueError("Formato de imagem nao suportado.")
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"Visualizador - {os.path.basename(caminho_imagem)}")
+
+            label = QLabel(dialog)
+            label.setAlignment(Qt.AlignCenter)
+            label.setPixmap(
+                pixmap.scaled(800, 600, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(label)
+            dialog.resize(840, 640)
+            dialog.exec()
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Could not open image: {exc}")
+
+    def apply_theme(self, theme):
+        self.setStyleSheet(
+            "QTreeWidget {"
+            f"background-color: {theme['sidebar_bg']};"
+            f"color: {theme['fg']};"
+            "border: none;"
+            "}"
+            "QTreeWidget::item:selected {"
+            f"background-color: {theme['select_bg']};"
+            "}"
+        )
