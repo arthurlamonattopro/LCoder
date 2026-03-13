@@ -105,3 +105,10 @@ Contribuições são o que tornam a comunidade de código aberto um lugar incrí
 ---
 
 Desenvolvido com ❤️ por [Arthur Lamonatto](https://github.com/arthurlamonattopro).
+
+---
+
+## Extensions
+
+See EXTENSIONS.md for details on authoring extensions.
+

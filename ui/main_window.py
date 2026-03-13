@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.extensions import ExtensionManager
 from core.languages import LANGUAGES, detectar_linguagem_por_extensao
 from core.themes import THEMES
 from ui.editor import Editor
@@ -41,6 +42,11 @@ class MainWindow(QMainWindow):
         self.untitled_count = 1
         self.process_manager = ProcessManager(self.write_to_output)
 
+        self.app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        self.extension_manager = ExtensionManager(self.config_manager, self.app_root)
+        self.extension_manager.discover_extensions()
+        self.extension_manager.load_contributions()
+
         self.setWindowTitle("LCoder IDE")
         self.resize(
             self.config_manager.get("window", "width") or 1400,
@@ -51,7 +57,9 @@ class MainWindow(QMainWindow):
 
         self.setup_ui()
         self.setup_menus()
+        self.extension_manager.attach_window(self)
         self.aplicar_tema()
+        self.extension_manager.activate_startup()
         self.atualizar_titulo()
 
     def setup_ui(self):
@@ -134,8 +142,10 @@ class MainWindow(QMainWindow):
 
     def setup_menus(self):
         menubar = self.menuBar()
+        self.menus = {}
 
         file_menu = menubar.addMenu("File")
+        self.menus["File"] = file_menu
         file_menu.addAction(self._make_action("New File", "Ctrl+N", self.novo_arquivo))
         file_menu.addAction(self._make_action("Open File", "Ctrl+O", self.abrir_arquivo))
         file_menu.addAction(self._make_action("Save", "Ctrl+S", self.salvar_arquivo))
@@ -146,10 +156,15 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self._make_action("Exit", None, self.close))
 
         edit_menu = menubar.addMenu("Edit")
+        self.menus["Edit"] = edit_menu
         edit_menu.addAction(self._make_action("Find", "Ctrl+F", self.show_find_dialog))
 
         self.theme_menu = menubar.addMenu("Theme")
+        self.menus["Theme"] = self.theme_menu
         self._rebuild_theme_menu()
+
+        extensions_menu = menubar.addMenu("Extensions")
+        self.menus["Extensions"] = extensions_menu
 
     def _make_action(self, label, shortcut, callback):
         action = QAction(label, self)
@@ -158,11 +173,26 @@ class MainWindow(QMainWindow):
         action.triggered.connect(callback)
         return action
 
+    def register_command_action(self, menu_name, label, command_id, shortcut=None):
+        menu = self.menus.get(menu_name)
+        if menu is None:
+            menu = self.menuBar().addMenu(menu_name)
+            self.menus[menu_name] = menu
+
+        action = QAction(label, self)
+        if shortcut:
+            action.setShortcut(shortcut)
+        action.triggered.connect(lambda checked=False: self.extension_manager.commands.execute_command(command_id))
+        menu.addAction(action)
+        return action
+
     def _rebuild_theme_menu(self):
         self.theme_menu.clear()
-        for theme_name in THEMES.keys():
+        for theme_name, theme in THEMES.items():
+            label = theme.get("_label") if isinstance(theme, dict) else None
+            title = label or theme_name.title()
             self.theme_menu.addAction(
-                self._make_action(theme_name.title(), None, lambda checked=False, t=theme_name: self.mudar_tema(t))
+                self._make_action(title, None, lambda checked=False, t=theme_name: self.mudar_tema(t))
             )
         self.theme_menu.addSeparator()
         self.theme_menu.addAction(self._make_action("Theme Editor", None, self.show_theme_editor))
@@ -543,5 +573,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self.config_manager.set(self.width(), "window", "width")
         self.config_manager.set(self.height(), "window", "height")
+        if self.extension_manager:
+            self.extension_manager.deactivate_all()
         self.process_manager.stop_terminal()
         super().closeEvent(event)

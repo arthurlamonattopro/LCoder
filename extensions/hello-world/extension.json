@@ -1,0 +1,23 @@
+{
+  "name": "hello-world",
+  "displayName": "Hello World",
+  "publisher": "lcoder",
+  "version": "0.0.1",
+  "main": "main.py",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "helloWorld.showMessage",
+        "title": "Hello World: Show Message"
+      }
+    ],
+    "menus": [
+      {
+        "menu": "Extensions",
+        "command": "helloWorld.showMessage",
+        "label": "Hello World"
+      }
+    ]
+  }
+}
