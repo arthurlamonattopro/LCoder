@@ -1,6 +1,6 @@
 import re
 
-from PySide6.QtCore import QRect, QSize, Qt, QStringListModel
+from PySide6.QtCore import QRect, QSize, Qt, QStringListModel, QTimer
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextFormat
 from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
@@ -91,6 +91,8 @@ class Editor(QPlainTextEdit):
         super().__init__(parent)
         self.config_manager = config_manager
         self.current_language = self.config_manager.get("current_language") or "python"
+        self._snippets = {}
+        self._doc_words = set()
 
         font_name, font_size = UI_CONFIG["font_code"][:2]
         font = QFont(font_name, font_size)
@@ -121,6 +123,10 @@ class Editor(QPlainTextEdit):
         self.completer.activated.connect(self.insert_completion)
         self._completer_model = QStringListModel(self)
         self.completer.setModel(self._completer_model)
+        self._completion_timer = QTimer(self)
+        self._completion_timer.setSingleShot(True)
+        self._completion_timer.timeout.connect(self._update_doc_words)
+        self._apply_indent_settings()
         self.update_completer_model()
 
         self._extra_selections = []
@@ -132,13 +138,35 @@ class Editor(QPlainTextEdit):
     def set_language(self, language):
         if language in LANGUAGES:
             self.current_language = language
+            self._apply_indent_settings()
             self.update_completer_model()
             self.aplicar_syntax_highlight()
 
     def update_completer_model(self):
         lang = self.get_current_language_config() or {}
-        suggestions = sorted(set(lang.get("keywords", []) + lang.get("functions", [])))
+        self._snippets = lang.get("snippets", {}) or {}
+        suggestions = set(lang.get("keywords", []) + lang.get("functions", []))
+        suggestions.update(self._snippets.keys())
+        suggestions.update(self._doc_words)
+        suggestions = sorted(suggestions)
         self._completer_model.setStringList(suggestions)
+
+    def _apply_indent_settings(self):
+        lang = self.get_current_language_config() or {}
+        indent = lang.get("indent", {}) or {}
+        size = int(indent.get("size") or 4)
+        use_tabs = bool(indent.get("use_tabs"))
+        if use_tabs:
+            self.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
+        else:
+            self.setTabStopDistance(size * self.fontMetrics().horizontalAdvance(" "))
+
+    def _update_doc_words(self):
+        text = self.toPlainText()
+        words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text))
+        if words != self._doc_words:
+            self._doc_words = words
+            self.update_completer_model()
 
     def line_number_area_width(self):
         digits = len(str(max(1, self.blockCount())))
@@ -215,6 +243,7 @@ class Editor(QPlainTextEdit):
 
     def _on_text_changed(self):
         self._refresh_extra_selections()
+        self._completion_timer.start(250)
 
     def _on_cursor_moved(self):
         self._refresh_extra_selections()
@@ -302,8 +331,22 @@ class Editor(QPlainTextEdit):
         if prefix:
             cursor.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(prefix))
             cursor.removeSelectedText()
-        cursor.insertText(completion)
-        self.setTextCursor(cursor)
+        snippet = self._snippets.get(completion)
+        if snippet:
+            marker = "$0"
+            insert_text = snippet
+            marker_index = snippet.find(marker)
+            if marker_index != -1:
+                insert_text = snippet.replace(marker, "")
+            cursor.insertText(insert_text)
+            if marker_index != -1:
+                cursor.setPosition(cursor.position() - (len(insert_text) - marker_index))
+                self.setTextCursor(cursor)
+            else:
+                self.setTextCursor(cursor)
+        else:
+            cursor.insertText(completion)
+            self.setTextCursor(cursor)
 
     def text_under_cursor(self):
         cursor = self.textCursor()
@@ -316,8 +359,14 @@ class Editor(QPlainTextEdit):
             block_text = cursor.block().text()[: cursor.positionInBlock()]
             indent_match = re.match(r"^\\s*", block_text)
             indent = indent_match.group(0) if indent_match else ""
-            if block_text.rstrip().endswith(":"):
-                indent += "    "
+            lang = self.get_current_language_config() or {}
+            indent_cfg = lang.get("indent", {}) or {}
+            size = int(indent_cfg.get("size") or 4)
+            use_tabs = bool(indent_cfg.get("use_tabs"))
+            indent_unit = "\t" if use_tabs else (" " * size)
+
+            if block_text.rstrip().endswith(":") or block_text.rstrip().endswith("{"):
+                indent += indent_unit
             super().keyPressEvent(event)
             super().insertPlainText(indent)
             return

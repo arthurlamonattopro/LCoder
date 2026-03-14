@@ -16,6 +16,7 @@ class Explorer(QTreeWidget):
         self.config_manager = config_manager
         self.open_file_callback = open_file_callback
         self.root_path = None
+        self._filter_text = ""
 
         self.setHeaderHidden(True)
         self.itemExpanded.connect(self.on_item_expanded)
@@ -30,6 +31,10 @@ class Explorer(QTreeWidget):
         if not self.root_path:
             return
         self._populate_children(None, self.root_path)
+
+    def set_filter(self, text):
+        self._filter_text = (text or "").strip().lower()
+        self.refresh()
 
     def _sorted_items(self, path):
         try:
@@ -53,6 +58,9 @@ class Explorer(QTreeWidget):
         for name in self._sorted_items(path):
             full_path = os.path.join(path, name)
             is_dir = os.path.isdir(full_path)
+            if self._filter_text and not is_dir:
+                if self._filter_text not in name.lower():
+                    continue
             icon = "📁" if is_dir else self._icon_for_file(full_path)
 
             item = QTreeWidgetItem([f" {icon}  {name}"])

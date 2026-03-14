@@ -25,6 +25,13 @@ DEFAULT_CONFIG = {
         "cpp": {"path": ""},
         "html": {"path": ""},
     },
+    "workspace": {
+        "root_path": "",
+        "open_files": [],
+        "active_file": "",
+        "terminal_history": [],
+    },
+    "recent_folders": [],
     "window": {
         "width": 1400,
         "height": 900,
