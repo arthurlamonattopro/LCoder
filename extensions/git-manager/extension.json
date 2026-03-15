@@ -1,0 +1,24 @@
+{
+  "name": "git-manager",
+  "displayName": "Git Manager",
+  "publisher": "lcoder",
+  "version": "0.1.0",
+  "main": "main.py",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "gitManager.open",
+        "title": "Git Manager: Open"
+      }
+    ],
+    "menus": [
+      {
+        "menu": "Git",
+        "command": "gitManager.open",
+        "label": "Open Git Manager",
+        "shortcut": "Ctrl+Shift+G"
+      }
+    ]
+  }
+}

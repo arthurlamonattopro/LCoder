@@ -11,6 +11,20 @@
         "enabled": true,
         "delay": 200
     },
+    "intelicode": {
+        "enabled": true,
+        "max_suggestions": 60
+    },
+    "python": {
+        "auto_imports": true
+    },
+    "venv": {
+        "auto_create": true,
+        "auto_install": true,
+        "use_for_run": true,
+        "path": ".venv",
+        "requirements": "requirements.txt"
+    },
     "languages": {
         "lua": {
             "path": ""
@@ -37,9 +51,27 @@
             "path": ""
         }
     },
+    "workspace": {
+        "root_path": "C:/Users/lamoD/ide/LCoder",
+        "open_files": [
+            "C:/Users/lamoD/ide/LCoder\\IMPROVEMENTS_SUMMARY.md",
+            "C:/Users/lamoD/ide/LCoder\\main.py"
+        ],
+        "active_file": "C:/Users/lamoD/ide/LCoder\\main.py",
+        "terminal_history": [
+            "clear"
+        ]
+    },
+    "recent_folders": [
+        "C:/Users/lamoD/ide/LCoder"
+    ],
     "window": {
         "width": 1400,
-        "height": 900,
+        "height": 916,
         "maximized": false
+    },
+    "openai": {
+        "api_key": "",
+        "model": ""
     }
 }
