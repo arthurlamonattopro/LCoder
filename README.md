@@ -17,6 +17,9 @@ A interface foi construída utilizando o **PySide6 (Qt)**, proporcionando um visu
 | **Temas Dinâmicos** | Escolha entre **Dark**, **Light** e **Monokai** para o melhor conforto visual. |
 | **Explorador de Arquivos** | Navegação hierárquica por pastas com ícones inteligentes por tipo de arquivo. |
 | **Editor Inteligente** | Realce de sintaxe e autocompletar para as principais linguagens do mercado. |
+| **IntelliCode** | Autocomplete com ranking inteligente baseado em frequência, recência e contexto. |
+| **Auto Import (Python)** | Insere automaticamente imports básicos ao salvar arquivos Python. |
+| **.venv Automático** | Cria `.venv` e instala `requirements.txt` ao abrir um workspace. |
 | **Terminal Real** | Integração total com o shell do sistema (CMD/Bash) em tempo real. |
 
 ---
@@ -59,6 +62,9 @@ Diferente de versões anteriores que utilizavam REPLs limitados, o novo terminal 
     ```bash
     python main.py
     ```
+4.  Abra uma pasta com `requirements.txt` para gerar `.venv` e instalar dependências automaticamente.
+
+> Dica: você pode desligar o IntelliCode, o auto-import e o auto `.venv` em **Settings**.
 
 ---
 

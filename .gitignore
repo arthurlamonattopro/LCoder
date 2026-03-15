@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# LCoder
+.lcoder/
+extensions/.storage/
+extensions/**/__pycache__/
+
+# OS/editor
+.DS_Store
+Thumbs.db
