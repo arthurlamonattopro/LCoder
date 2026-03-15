@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 
 from PySide6.QtCore import QRect, QSize, Qt, QStringListModel, QTimer
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextFormat
@@ -93,8 +94,22 @@ class Editor(QPlainTextEdit):
         self.current_language = self.config_manager.get("current_language") or "python"
         self._snippets = {}
         self._doc_words = set()
+        self._doc_word_counts = {}
+        self._attr_map = {}
+        self._recent_scores = {}
+        self._recent_index = 0
+        self._show_line_numbers = True
+        self._autocomplete_enabled = True
+        self._autocomplete_delay = 200
+        self._intelicode_enabled = True
+        self._max_suggestions = 60
+        self._base_suggestions = []
+        self._lang_keywords = set()
+        self._lang_functions = set()
 
-        font_name, font_size = UI_CONFIG["font_code"][:2]
+        font_cfg = self.config_manager.get("editor") or {}
+        font_name = font_cfg.get("font_family") or UI_CONFIG["font_code"][0]
+        font_size = int(font_cfg.get("font_size") or UI_CONFIG["font_code"][1])
         font = QFont(font_name, font_size)
         self.setFont(font)
         self.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
@@ -130,6 +145,7 @@ class Editor(QPlainTextEdit):
         self.update_completer_model()
 
         self._extra_selections = []
+        self.apply_editor_settings()
         self.aplicar_syntax_highlight()
 
     def get_current_language_config(self):
@@ -145,11 +161,17 @@ class Editor(QPlainTextEdit):
     def update_completer_model(self):
         lang = self.get_current_language_config() or {}
         self._snippets = lang.get("snippets", {}) or {}
-        suggestions = set(lang.get("keywords", []) + lang.get("functions", []))
+        self._lang_keywords = set(lang.get("keywords", []))
+        self._lang_functions = set(lang.get("functions", []))
+        suggestions = set(self._lang_keywords | self._lang_functions)
         suggestions.update(self._snippets.keys())
         suggestions.update(self._doc_words)
-        suggestions = sorted(suggestions)
-        self._completer_model.setStringList(suggestions)
+        self._base_suggestions = sorted(suggestions)
+        prefix = self.completer.completionPrefix() or ""
+        if prefix:
+            self._update_completions(prefix)
+        else:
+            self._completer_model.setStringList(self._base_suggestions)
 
     def _apply_indent_settings(self):
         lang = self.get_current_language_config() or {}
@@ -163,17 +185,31 @@ class Editor(QPlainTextEdit):
 
     def _update_doc_words(self):
         text = self.toPlainText()
-        words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text))
-        if words != self._doc_words:
-            self._doc_words = words
+        words = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text)
+        counts = Counter(words)
+        word_set = set(counts.keys())
+        attr_map = self._extract_attr_map(text)
+        if word_set != self._doc_words or counts != self._doc_word_counts or attr_map != self._attr_map:
+            self._doc_words = word_set
+            self._doc_word_counts = counts
+            self._attr_map = attr_map
             self.update_completer_model()
+
+    def _extract_attr_map(self, text):
+        attr_map = {}
+        for base, attr in re.findall(r"\\b([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)", text):
+            attr_map.setdefault(base, set()).add(attr)
+        return attr_map
 
     def line_number_area_width(self):
         digits = len(str(max(1, self.blockCount())))
         return 12 + self.fontMetrics().horizontalAdvance("9") * digits
 
     def update_line_number_area_width(self, _):
-        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+        if self._show_line_numbers:
+            self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+        else:
+            self.setViewportMargins(0, 0, 0, 0)
 
     def update_line_number_area(self, rect, dy):
         if dy:
@@ -190,6 +226,8 @@ class Editor(QPlainTextEdit):
         self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
 
     def line_number_area_paint_event(self, event):
+        if not self._show_line_numbers:
+            return
         painter = QPainter(self.line_number_area)
         painter.fillRect(event.rect(), self._line_number_bg)
 
@@ -243,7 +281,10 @@ class Editor(QPlainTextEdit):
 
     def _on_text_changed(self):
         self._refresh_extra_selections()
-        self._completion_timer.start(250)
+        if self._autocomplete_enabled:
+            if self._intelicode_enabled:
+                self._capture_recent_word()
+            self._completion_timer.start(self._autocomplete_delay)
 
     def _on_cursor_moved(self):
         self._refresh_extra_selections()
@@ -353,6 +394,79 @@ class Editor(QPlainTextEdit):
         cursor.select(QTextCursor.WordUnderCursor)
         return cursor.selectedText()
 
+    def _completion_context(self):
+        cursor = self.textCursor()
+        block_text = cursor.block().text()
+        pos = cursor.positionInBlock()
+        left = block_text[:pos]
+        match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)?$", left)
+        if match:
+            base = match.group(1)
+            partial = match.group(2) or ""
+            return partial, base
+        return self.text_under_cursor(), None
+
+    def _capture_recent_word(self):
+        cursor = self.textCursor()
+        cursor.select(QTextCursor.WordUnderCursor)
+        word = cursor.selectedText()
+        if not word or len(word) < 3:
+            return
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", word):
+            return
+        self._recent_index += 1
+        self._recent_scores[word] = self._recent_index
+        if len(self._recent_scores) > 2000:
+            cutoff = self._recent_index - 1500
+            self._recent_scores = {w: i for w, i in self._recent_scores.items() if i >= cutoff}
+
+    def _update_completions(self, prefix, base=None):
+        if base and base in self._attr_map:
+            candidates = sorted(self._attr_map.get(base, []))
+            if not candidates:
+                candidates = self._base_suggestions
+        else:
+            candidates = self._base_suggestions
+
+        if prefix:
+            matches = [c for c in candidates if c.lower().startswith(prefix.lower())]
+            if not matches and self._intelicode_enabled:
+                matches = [c for c in candidates if prefix.lower() in c.lower()]
+        else:
+            matches = candidates
+
+        if self._intelicode_enabled:
+            matches.sort(key=lambda w: (-self._score_completion(w, prefix, base), w.lower()))
+        else:
+            matches.sort(key=lambda w: w.lower())
+
+        if self._max_suggestions and len(matches) > self._max_suggestions:
+            matches = matches[: self._max_suggestions]
+        self._completer_model.setStringList(matches)
+
+    def _score_completion(self, word, prefix, base=None):
+        score = 0.0
+        if word in self._snippets:
+            score += 6.0
+        if word in self._lang_keywords:
+            score += 2.0
+        if word in self._lang_functions:
+            score += 3.0
+        freq = self._doc_word_counts.get(word, 0)
+        score += min(freq, 6)
+        recent = self._recent_scores.get(word)
+        if recent:
+            distance = max(0, self._recent_index - recent)
+            score += max(0, 6 - (distance // 15))
+        if prefix and word.lower().startswith(prefix.lower()):
+            score += 2.0
+            if word == prefix:
+                score += 1.0
+        if base and base in self._attr_map and word in self._attr_map.get(base, set()):
+            score += 1.5
+        score -= len(word) * 0.01
+        return score
+
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             cursor = self.textCursor()
@@ -383,18 +497,22 @@ class Editor(QPlainTextEdit):
 
         super().keyPressEvent(event)
 
+        if not self._autocomplete_enabled:
+            return
+
         ctrl_or_shift = event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)
         if ctrl_or_shift and not event.text():
             return
 
-        prefix = self.text_under_cursor()
-        if len(prefix) < 1:
+        prefix, base = self._completion_context()
+        if len(prefix) < 1 and not (self._intelicode_enabled and base):
             self.completer.popup().hide()
             return
 
         if prefix != self.completer.completionPrefix():
             self.completer.setCompletionPrefix(prefix)
-            self.completer.popup().setCurrentIndex(self.completer.completionModel().index(0, 0))
+        self._update_completions(prefix, base)
+        self.completer.popup().setCurrentIndex(self.completer.completionModel().index(0, 0))
 
         rect = self.cursorRect()
         rect.setWidth(
@@ -406,3 +524,34 @@ class Editor(QPlainTextEdit):
     def cursor_position(self):
         cursor = self.textCursor()
         return cursor.blockNumber() + 1, cursor.columnNumber() + 1
+
+    def apply_editor_settings(self):
+        editor_cfg = self.config_manager.get("editor") or {}
+        font_name = editor_cfg.get("font_family") or UI_CONFIG["font_code"][0]
+        font_size = int(editor_cfg.get("font_size") or UI_CONFIG["font_code"][1])
+        font = QFont(font_name, font_size)
+        self.setFont(font)
+
+        show_line_numbers = editor_cfg.get("show_line_numbers")
+        if show_line_numbers is None:
+            show_line_numbers = True
+        self._show_line_numbers = bool(show_line_numbers)
+        self.line_number_area.setVisible(self._show_line_numbers)
+        self.update_line_number_area_width(0)
+
+        word_wrap = editor_cfg.get("word_wrap")
+        if word_wrap:
+            self.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        else:
+            self.setLineWrapMode(QPlainTextEdit.NoWrap)
+
+        auto_cfg = self.config_manager.get("autocomplete") or {}
+        self._autocomplete_enabled = bool(auto_cfg.get("enabled", True))
+        self._autocomplete_delay = int(auto_cfg.get("delay") or 200)
+        if not self._autocomplete_enabled:
+            self.completer.popup().hide()
+
+        intelicode_cfg = self.config_manager.get("intelicode") or {}
+        self._intelicode_enabled = bool(intelicode_cfg.get("enabled", True))
+        self._max_suggestions = int(intelicode_cfg.get("max_suggestions") or 60)
+        self.update_completer_model()

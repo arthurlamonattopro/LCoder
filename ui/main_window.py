@@ -31,6 +31,9 @@ from core.languages import LANGUAGES, detectar_linguagem_por_extensao
 from core.themes import THEMES
 from ui.editor import Editor
 from ui.explorer import Explorer
+from utils.openai_client import OpenAIRequestError, create_response, extract_output_text
+from utils.auto_importer import auto_import_python
+from utils.venv_manager import VenvManager
 from utils.process_mgr import ProcessManager
 
 
@@ -47,6 +50,7 @@ class MainWindow(QMainWindow):
         self._terminal_history = []
         self._terminal_history_index = -1
         self.process_manager = ProcessManager(self.write_to_output)
+        self.venv_manager = VenvManager(self.write_to_output, self.config_manager)
 
         self.app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         self.extension_manager = ExtensionManager(self.config_manager, self.app_root)
@@ -98,14 +102,20 @@ class MainWindow(QMainWindow):
         self.tab_editors = QWidget()
         self.tab_output = QWidget()
         self.tab_terminal = QWidget()
+        self.tab_settings = QWidget()
+        self.tab_codex = QWidget()
 
         self.main_tabs.addTab(self.tab_editors, "Editors")
         self.main_tabs.addTab(self.tab_output, "Output")
         self.main_tabs.addTab(self.tab_terminal, "Terminal")
+        self.main_tabs.addTab(self.tab_settings, "Settings")
+        self.main_tabs.addTab(self.tab_codex, "Codex")
 
         self._setup_editors_tab()
         self._setup_output_tab()
         self._setup_terminal_tab()
+        self._setup_settings_tab()
+        self._setup_codex_tab()
 
         splitter.addWidget(sidebar)
         splitter.addWidget(content)
@@ -153,6 +163,186 @@ class MainWindow(QMainWindow):
         self.term_output.setReadOnly(True)
         layout.addWidget(self.term_output)
 
+    def _setup_settings_tab(self):
+        layout = QVBoxLayout(self.tab_settings)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.settings_theme = QComboBox()
+        self.settings_theme.addItems(list(THEMES.keys()))
+        current_theme = self.config_manager.get("theme") or "dark"
+        self.settings_theme.setCurrentText(current_theme)
+        form.addRow("Theme:", self.settings_theme)
+
+        editor_cfg = self.config_manager.get("editor") or {}
+        self.settings_font = QLineEdit(editor_cfg.get("font_family") or "Consolas")
+        form.addRow("Editor font:", self.settings_font)
+
+        self.settings_font_size = QComboBox()
+        for size in range(8, 25):
+            self.settings_font_size.addItem(str(size))
+        self.settings_font_size.setCurrentText(str(editor_cfg.get("font_size") or 12))
+        form.addRow("Font size:", self.settings_font_size)
+
+        self.settings_line_numbers = QCheckBox("Show line numbers")
+        self.settings_line_numbers.setChecked(bool(editor_cfg.get("show_line_numbers", True)))
+        form.addRow(self.settings_line_numbers)
+
+        self.settings_word_wrap = QCheckBox("Word wrap")
+        self.settings_word_wrap.setChecked(bool(editor_cfg.get("word_wrap", False)))
+        form.addRow(self.settings_word_wrap)
+
+        auto_cfg = self.config_manager.get("autocomplete") or {}
+        self.settings_autocomplete = QCheckBox("Autocomplete enabled")
+        self.settings_autocomplete.setChecked(bool(auto_cfg.get("enabled", True)))
+        form.addRow(self.settings_autocomplete)
+
+        self.settings_autocomplete_delay = QComboBox()
+        for delay in (100, 150, 200, 250, 300, 400, 500):
+            self.settings_autocomplete_delay.addItem(str(delay))
+        self.settings_autocomplete_delay.setCurrentText(str(auto_cfg.get("delay") or 200))
+        form.addRow("Autocomplete delay (ms):", self.settings_autocomplete_delay)
+
+        intelicode_cfg = self.config_manager.get("intelicode") or {}
+        self.settings_intelicode = QCheckBox("IntelliCode smart ranking")
+        self.settings_intelicode.setChecked(bool(intelicode_cfg.get("enabled", True)))
+        form.addRow(self.settings_intelicode)
+
+        self.settings_intelicode_max = QComboBox()
+        for count in (20, 30, 40, 60, 80, 120):
+            self.settings_intelicode_max.addItem(str(count))
+        self.settings_intelicode_max.setCurrentText(str(intelicode_cfg.get("max_suggestions") or 60))
+        form.addRow("Autocomplete max suggestions:", self.settings_intelicode_max)
+
+        python_cfg = self.config_manager.get("python") or {}
+        self.settings_auto_imports = QCheckBox("Python auto-import on save")
+        self.settings_auto_imports.setChecked(bool(python_cfg.get("auto_imports", True)))
+        form.addRow(self.settings_auto_imports)
+
+        venv_cfg = self.config_manager.get("venv") or {}
+        self.settings_auto_venv = QCheckBox("Auto create .venv")
+        self.settings_auto_venv.setChecked(bool(venv_cfg.get("auto_create", True)))
+        form.addRow(self.settings_auto_venv)
+
+        self.settings_auto_pip = QCheckBox("Auto install requirements.txt")
+        self.settings_auto_pip.setChecked(bool(venv_cfg.get("auto_install", True)))
+        form.addRow(self.settings_auto_pip)
+
+        actions = QHBoxLayout()
+        self.btn_apply_settings = QPushButton("Apply Settings")
+        self.btn_reset_settings = QPushButton("Reset to Defaults")
+        actions.addWidget(self.btn_apply_settings)
+        actions.addWidget(self.btn_reset_settings)
+        layout.addLayout(actions)
+
+        self.btn_apply_settings.clicked.connect(self.apply_settings_from_ui)
+        self.btn_reset_settings.clicked.connect(self.reset_settings_to_defaults)
+
+    def _setup_codex_tab(self):
+        layout = QVBoxLayout(self.tab_codex)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        openai_cfg = self.config_manager.get("openai") or {}
+        self.codex_api_key = QLineEdit(openai_cfg.get("api_key") or "")
+        self.codex_api_key.setEchoMode(QLineEdit.Password)
+        form.addRow("OpenAI API key:", self.codex_api_key)
+
+        self.codex_model = QLineEdit(openai_cfg.get("model") or "")
+        self.codex_model.setPlaceholderText("ex: gpt-4.1-mini")
+        form.addRow("Model:", self.codex_model)
+
+        self.codex_system = QTextEdit()
+        self.codex_system.setPlaceholderText("Optional system instructions...")
+        self.codex_system.setFixedHeight(80)
+        form.addRow("System:", self.codex_system)
+
+        self.codex_prompt = QTextEdit()
+        self.codex_prompt.setPlaceholderText("Describe the task you want Codex to do...")
+        form.addRow("Prompt:", self.codex_prompt)
+
+        actions = QHBoxLayout()
+        self.btn_codex_run = QPushButton("Run Codex")
+        self.btn_codex_insert = QPushButton("Insert into Editor")
+        self.btn_codex_clear = QPushButton("Clear Output")
+        actions.addWidget(self.btn_codex_run)
+        actions.addWidget(self.btn_codex_insert)
+        actions.addWidget(self.btn_codex_clear)
+        layout.addLayout(actions)
+
+        layout.addWidget(QLabel("Output"))
+        self.codex_output = QTextEdit()
+        self.codex_output.setReadOnly(True)
+        layout.addWidget(self.codex_output)
+
+        self.btn_codex_run.clicked.connect(self.codex_run)
+        self.btn_codex_insert.clicked.connect(self.codex_insert_into_editor)
+        self.btn_codex_clear.clicked.connect(lambda: self.codex_output.clear())
+
+    def apply_settings_from_ui(self):
+        theme = self.settings_theme.currentText().strip() or "dark"
+        font_family = self.settings_font.text().strip() or "Consolas"
+        font_size = int(self.settings_font_size.currentText() or 12)
+        show_line_numbers = self.settings_line_numbers.isChecked()
+        word_wrap = self.settings_word_wrap.isChecked()
+        autocomplete_enabled = self.settings_autocomplete.isChecked()
+        autocomplete_delay = int(self.settings_autocomplete_delay.currentText() or 200)
+        intelicode_enabled = self.settings_intelicode.isChecked()
+        intelicode_max = int(self.settings_intelicode_max.currentText() or 60)
+        auto_imports = self.settings_auto_imports.isChecked()
+        auto_venv = self.settings_auto_venv.isChecked()
+        auto_pip = self.settings_auto_pip.isChecked()
+
+        self.config_manager.set(theme, "theme")
+        self.config_manager.set(font_family, "editor", "font_family")
+        self.config_manager.set(font_size, "editor", "font_size")
+        self.config_manager.set(show_line_numbers, "editor", "show_line_numbers")
+        self.config_manager.set(word_wrap, "editor", "word_wrap")
+        self.config_manager.set(autocomplete_enabled, "autocomplete", "enabled")
+        self.config_manager.set(autocomplete_delay, "autocomplete", "delay")
+        self.config_manager.set(intelicode_enabled, "intelicode", "enabled")
+        self.config_manager.set(intelicode_max, "intelicode", "max_suggestions")
+        self.config_manager.set(auto_imports, "python", "auto_imports")
+        self.config_manager.set(auto_venv, "venv", "auto_create")
+        self.config_manager.set(auto_pip, "venv", "auto_install")
+
+        self.aplicar_tema()
+        self._apply_editor_settings_to_tabs()
+        self.statusBar().showMessage("Settings applied.", 2500)
+        if self.explorer.root_path and (auto_venv or auto_pip):
+            self._on_workspace_opened(self.explorer.root_path)
+
+    def reset_settings_to_defaults(self):
+        default_editor = {
+            "font_family": "Consolas",
+            "font_size": 12,
+            "show_line_numbers": True,
+            "word_wrap": False,
+        }
+        default_auto = {"enabled": True, "delay": 200}
+        default_intelicode = {"enabled": True, "max_suggestions": 60}
+        default_python = {"auto_imports": True}
+        default_venv = {"auto_create": True, "auto_install": True}
+
+        self.settings_theme.setCurrentText("dark")
+        self.settings_font.setText(default_editor["font_family"])
+        self.settings_font_size.setCurrentText(str(default_editor["font_size"]))
+        self.settings_line_numbers.setChecked(default_editor["show_line_numbers"])
+        self.settings_word_wrap.setChecked(default_editor["word_wrap"])
+        self.settings_autocomplete.setChecked(default_auto["enabled"])
+        self.settings_autocomplete_delay.setCurrentText(str(default_auto["delay"]))
+        self.settings_intelicode.setChecked(default_intelicode["enabled"])
+        self.settings_intelicode_max.setCurrentText(str(default_intelicode["max_suggestions"]))
+        self.settings_auto_imports.setChecked(default_python["auto_imports"])
+        self.settings_auto_venv.setChecked(default_venv["auto_create"])
+        self.settings_auto_pip.setChecked(default_venv["auto_install"])
+
+        self.apply_settings_from_ui()
+
     def setup_menus(self):
         menubar = self.menuBar()
         self.menus = {}
@@ -190,6 +380,7 @@ class MainWindow(QMainWindow):
         if root_path and os.path.isdir(root_path):
             self.explorer.set_root_path(root_path)
             self._add_recent_folder(root_path)
+            self._on_workspace_opened(root_path)
         data = self._load_workspace_file(root_path) if root_path else {}
         if data:
             self._apply_workspace_data(data)
@@ -248,6 +439,12 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _on_workspace_opened(self, root_path):
+        venv_cfg = self.config_manager.get("venv") or {}
+        if not venv_cfg.get("auto_create", True) and not venv_cfg.get("auto_install", True):
+            return
+        self.venv_manager.ensure_workspace_venv(root_path)
+
     def _apply_workspace_data(self, data):
         open_files = data.get("open_files") or []
         for path in open_files:
@@ -302,6 +499,7 @@ class MainWindow(QMainWindow):
             self._close_all_tabs()
             self.explorer.set_root_path(path)
             self._add_recent_folder(path)
+            self._on_workspace_opened(path)
             data = self._load_workspace_file(path)
             if data:
                 self._apply_workspace_data(data)
@@ -496,6 +694,29 @@ class MainWindow(QMainWindow):
                 meta["lang_combo"].setCurrentText(detected)
 
         try:
+            if editor.current_language == "python" and self.config_manager.get("python", "auto_imports"):
+                original_text = editor.toPlainText()
+                updated_text, added = auto_import_python(
+                    original_text,
+                    file_path=path,
+                    workspace_root=self.explorer.root_path,
+                )
+                if added and updated_text != original_text:
+                    cursor = editor.textCursor()
+                    line = cursor.blockNumber()
+                    col = cursor.columnNumber()
+                    editor.blockSignals(True)
+                    editor.setPlainText(updated_text)
+                    editor.blockSignals(False)
+                    new_cursor = editor.textCursor()
+                    new_cursor.movePosition(QTextCursor.Start)
+                    if line > 0:
+                        new_cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, line)
+                    if col > 0:
+                        new_cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, col)
+                    editor.setTextCursor(new_cursor)
+                    self.statusBar().showMessage(f"Auto-import: {', '.join(added)}", 3000)
+
             with open(path, "w", encoding="utf-8") as f:
                 f.write(editor.toPlainText())
             editor.aplicar_syntax_highlight()
@@ -585,6 +806,62 @@ class MainWindow(QMainWindow):
         theme_name = self.config_manager.get("theme") or "dark"
         editor.apply_theme(THEMES.get(theme_name, THEMES["dark"]))
 
+    def _apply_editor_settings_to_tabs(self):
+        for meta in self.tab_meta.values():
+            editor = meta.get("editor")
+            if editor:
+                editor.apply_editor_settings()
+
+    def codex_run(self):
+        api_key = self.codex_api_key.text().strip()
+        model = self.codex_model.text().strip()
+        system_text = self.codex_system.toPlainText().strip()
+        prompt_text = self.codex_prompt.toPlainText().strip()
+
+        if not api_key:
+            QMessageBox.warning(self, "Codex", "Informe sua OpenAI API key.")
+            return
+        if not model:
+            QMessageBox.warning(self, "Codex", "Informe o modelo.")
+            return
+        if not prompt_text:
+            QMessageBox.warning(self, "Codex", "Digite um prompt.")
+            return
+
+        self.config_manager.set(api_key, "openai", "api_key")
+        self.config_manager.set(model, "openai", "model")
+
+        try:
+            response = create_response(
+                api_key=api_key,
+                model=model,
+                user_text=prompt_text,
+                system_text=system_text or None,
+            )
+            text = extract_output_text(response)
+            if not text:
+                text = json.dumps(response, indent=2)
+            self.codex_output.setPlainText(text)
+        except OpenAIRequestError as exc:
+            details = exc.body or ""
+            message = str(exc)
+            if details:
+                message = f"{message}\n\n{details}"
+            QMessageBox.warning(self, "Codex", message)
+        except Exception as exc:
+            QMessageBox.warning(self, "Codex", f"Erro inesperado: {exc}")
+
+    def codex_insert_into_editor(self):
+        editor = self.get_current_editor()
+        if not editor:
+            QMessageBox.information(self, "Codex", "Abra um arquivo para inserir o texto.")
+            return
+        text = self.codex_output.toPlainText()
+        if not text:
+            QMessageBox.information(self, "Codex", "Nada para inserir.")
+            return
+        editor.insertPlainText(text)
+
     def write_to_output(self, text):
         self.output_received.emit(text)
 
@@ -621,6 +898,7 @@ class MainWindow(QMainWindow):
             self._close_all_tabs()
             self.explorer.set_root_path(path)
             self._add_recent_folder(path)
+            self._on_workspace_opened(path)
             data = self._load_workspace_file(path)
             if data:
                 self._apply_workspace_data(data)

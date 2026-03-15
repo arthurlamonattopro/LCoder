@@ -15,6 +15,20 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "delay": 200,
     },
+    "intelicode": {
+        "enabled": True,
+        "max_suggestions": 60,
+    },
+    "python": {
+        "auto_imports": True,
+    },
+    "venv": {
+        "auto_create": True,
+        "auto_install": True,
+        "use_for_run": True,
+        "path": ".venv",
+        "requirements": "requirements.txt",
+    },
     "languages": {
         "lua": {"path": ""},
         "python": {"path": ""},
@@ -36,6 +50,10 @@ DEFAULT_CONFIG = {
         "width": 1400,
         "height": 900,
         "maximized": False,
+    },
+    "openai": {
+        "api_key": "",
+        "model": "",
     },
 }
 

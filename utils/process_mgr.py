@@ -15,13 +15,17 @@ class ProcessManager:
             self.output_callback(f"Erro: Configuracao para '{language}' nao encontrada.\n")
             return
 
-        # Tenta obter o execut??vel configurado ou encontrar no PATH
+        # Tenta obter o executavel configurado ou encontrar no PATH
         executable = config_manager.get("languages", language, "path")
         if not executable or not os.path.exists(executable):
             executable = encontrar_executavel(lang_config["executable"])
             # Fallback final usando shutil.which
             if not os.path.exists(executable):
                 executable = shutil.which(lang_config["executable"]) or lang_config["executable"]
+        if language == "python":
+            venv_executable = self._resolve_venv_python(file_path, config_manager)
+            if venv_executable:
+                executable = venv_executable
 
         def run():
             try:
@@ -81,6 +85,35 @@ class ProcessManager:
                 self.output_callback(f"Erro ao executar processo: {e}\n")
 
         threading.Thread(target=run, daemon=True).start()
+
+    def _resolve_venv_python(self, file_path, config_manager):
+        cfg = config_manager.get("venv") or {}
+        if not cfg.get("use_for_run", True):
+            return None
+        venv_name = cfg.get("path") or ".venv"
+        root_path = config_manager.get("workspace", "root_path") or ""
+        if root_path:
+            root_path = os.path.abspath(root_path)
+        candidate_paths = []
+        if root_path and file_path:
+            try:
+                file_abs = os.path.abspath(file_path)
+                if file_abs.startswith(root_path):
+                    candidate_paths.append(os.path.join(root_path, venv_name))
+            except Exception:
+                pass
+        if file_path:
+            candidate_paths.append(os.path.join(os.path.dirname(os.path.abspath(file_path)), venv_name))
+        for venv_path in candidate_paths:
+            venv_python = self._venv_python(venv_path)
+            if venv_python and os.path.exists(venv_python):
+                return venv_python
+        return None
+
+    def _venv_python(self, venv_path):
+        if os.name == "nt":
+            return os.path.join(venv_path, "Scripts", "python.exe")
+        return os.path.join(venv_path, "bin", "python")
     def start_terminal(self, language, config_manager):
         if self.terminal_process:
             self.stop_terminal()
