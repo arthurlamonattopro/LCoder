@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 from PySide6.QtCore import QEvent, QRegularExpression, Signal, Qt
 from PySide6.QtGui import QAction, QTextCursor, QTextDocument
@@ -52,7 +53,7 @@ class MainWindow(QMainWindow):
         self.process_manager = ProcessManager(self.write_to_output)
         self.venv_manager = VenvManager(self.write_to_output, self.config_manager)
 
-        self.app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        self.app_root = self._detect_app_root()
         self.extension_manager = ExtensionManager(self.config_manager, self.app_root)
         self.extension_manager.discover_extensions()
         self.extension_manager.load_contributions()
@@ -124,6 +125,14 @@ class MainWindow(QMainWindow):
         splitter.setSizes([280, 1120])
 
         self.statusBar().showMessage("Ready")
+
+    def _detect_app_root(self):
+        if getattr(sys, "frozen", False):
+            exe_dir = os.path.dirname(sys.executable)
+            # Always use external extensions next to the executable.
+            os.makedirs(os.path.join(exe_dir, "extensions"), exist_ok=True)
+            return exe_dir
+        return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
     def _setup_editors_tab(self):
         layout = QVBoxLayout(self.tab_editors)
