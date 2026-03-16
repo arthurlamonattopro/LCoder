@@ -1,0 +1,32 @@
+{
+  "name": "media-preview",
+  "displayName": "Media Preview",
+  "publisher": "lcoder",
+  "version": "0.1.0",
+  "main": "main.py",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "mediaPreview.open",
+        "title": "Media Preview: Open"
+      },
+      {
+        "id": "mediaPreview.previewActive",
+        "title": "Media Preview: Preview Active Editor"
+      }
+    ],
+    "menus": [
+      {
+        "menu": "Extensions",
+        "command": "mediaPreview.open",
+        "label": "Media Preview: Open"
+      },
+      {
+        "menu": "Extensions",
+        "command": "mediaPreview.previewActive",
+        "label": "Media Preview: Preview Active Editor"
+      }
+    ]
+  }
+}
