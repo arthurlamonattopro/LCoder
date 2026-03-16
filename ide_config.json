@@ -54,10 +54,11 @@
     "workspace": {
         "root_path": "C:/Users/lamoD/ide/LCoder",
         "open_files": [
-            "C:/Users/lamoD/ide/LCoder\\IMPROVEMENTS_SUMMARY.md",
-            "C:/Users/lamoD/ide/LCoder\\main.py"
+            "C:/Users/lamoD/ide/LCoder\\main.py",
+            "C:/Users/lamoD/ide/LCoder\\README.md",
+            "C:/Users/lamoD/ide/LCoder\\EXTENSIONS.md"
         ],
-        "active_file": "C:/Users/lamoD/ide/LCoder\\main.py",
+        "active_file": "C:/Users/lamoD/ide/LCoder\\EXTENSIONS.md",
         "terminal_history": [
             "clear"
         ]
