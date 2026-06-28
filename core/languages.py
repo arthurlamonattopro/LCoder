@@ -1,5 +1,6 @@
 import os
 import subprocess
+import webbrowser
 
 LANGUAGES = {
     "lua": {
@@ -116,6 +117,7 @@ LANGUAGES = {
         "icon": "⚙️",
         "executable": "g++",
         "run_args": ["{file}"],
+        "repl_args": [],
         "indent": {"size": 4, "use_tabs": False},
         "snippets": {
             "main": "int main() {\n    $0\n    return 0;\n}",
@@ -131,7 +133,7 @@ LANGUAGES = {
         "name": "HTML",
         "extensions": [".html", ".htm"],
         "icon": "🌐",
-        "executable": "firefox",
+        "executable": "webbrowser",
         "run_args": ["{file}"],
         "repl_args": [],
         "indent": {"size": 2, "use_tabs": False},
@@ -148,28 +150,37 @@ LANGUAGES = {
 }
 
 def encontrar_executavel(nome):
-    """Encontra o executavel de uma linguagem no sistema"""
+    """Encontra o executavel de uma linguagem no sistema."""
+    if nome == "webbrowser":
+        return "webbrowser"
+
     try:
         if os.name == "nt":
-            result = subprocess.run(["where", nome], capture_output=True, text=True)
+            result = subprocess.run(
+                ["where", nome], capture_output=True, text=True, check=False
+            )
             if result.returncode == 0:
                 return result.stdout.splitlines()[0].strip()
         else:
-            result = subprocess.run(["which", nome], capture_output=True, text=True)
+            result = subprocess.run(
+                ["which", nome], capture_output=True, text=True, check=False
+            )
             if result.returncode == 0:
                 return result.stdout.strip()
-    except:
+    except (OSError, subprocess.SubprocessError):
         pass
 
     if nome == "python":
         try:
-            result = subprocess.run(["python3", "--version"], capture_output=True, text=True)
+            result = subprocess.run(
+                ["python3", "--version"], capture_output=True, text=True, check=False
+            )
             if result.returncode == 0:
                 return "python3"
-        except:
+        except (OSError, subprocess.SubprocessError):
             pass
 
-    if os.name == 'nt':
+    if os.name == "nt":
         common_paths = [
             rf"C:\Program Files\{nome}\{nome}.exe",
             rf"C:\{nome}\{nome}.exe",
@@ -181,10 +192,20 @@ def encontrar_executavel(nome):
 
     return nome
 
+
 def detectar_linguagem_por_extensao(caminho_arquivo):
-    """Detecta a linguagem baseada na extensão do arquivo"""
+    """Detecta a linguagem baseada na extensao do arquivo."""
     ext = os.path.splitext(caminho_arquivo)[1].lower()
     for lang_key, lang_config in LANGUAGES.items():
         if ext in lang_config["extensions"]:
             return lang_key
     return None
+
+
+def abrir_no_navegador(caminho_arquivo):
+    """Abre um arquivo HTML no navegador padrao do sistema."""
+    try:
+        webbrowser.open("file://" + os.path.abspath(caminho_arquivo))
+        return True
+    except (OSError, webbrowser.Error):
+        return False

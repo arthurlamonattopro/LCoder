@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from PySide6.QtCore import QEvent, QRegularExpression, Signal, Qt
+from PySide6.QtCore import QEvent, QRegularExpression, Qt, Signal
 from PySide6.QtGui import QAction, QTextCursor, QTextDocument
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -32,10 +32,15 @@ from core.languages import LANGUAGES, detectar_linguagem_por_extensao
 from core.themes import THEMES
 from ui.editor import Editor
 from ui.explorer import Explorer
-from utils.openai_client import OpenAIRequestError, create_response, extract_output_text
 from utils.auto_importer import auto_import_python
-from utils.venv_manager import VenvManager
+from utils.openai_client import (
+    OpenAIRequestError,
+    create_response,
+    extract_output_text,
+    resolve_api_key,
+)
 from utils.process_mgr import ProcessManager
+from utils.venv_manager import VenvManager
 
 
 class MainWindow(QMainWindow):
@@ -386,6 +391,8 @@ class MainWindow(QMainWindow):
     def _restore_session(self):
         workspace = self.config_manager.get("workspace") or {}
         root_path = workspace.get("root_path") or ""
+        if root_path:
+            root_path = os.path.normpath(root_path)
         if root_path and os.path.isdir(root_path):
             self.explorer.set_root_path(root_path)
             self._add_recent_folder(root_path)
@@ -397,10 +404,14 @@ class MainWindow(QMainWindow):
 
         open_files = workspace.get("open_files") or []
         for path in open_files:
+            if path:
+                path = os.path.normpath(path)
             if path and os.path.isfile(path):
                 self.abrir_arquivo_por_caminho(path)
 
         active_file = workspace.get("active_file")
+        if active_file:
+            active_file = os.path.normpath(active_file)
         if active_file and active_file in self.open_file_tabs:
             self.editor_tabs.setCurrentWidget(self.open_file_tabs[active_file])
 
@@ -411,12 +422,18 @@ class MainWindow(QMainWindow):
         open_files = [meta.get("path") for meta in self.tab_meta.values() if meta.get("path")]
         active_meta = self.get_current_tab_meta()
         active_file = active_meta.get("path") if active_meta else ""
-        self.config_manager.set(self.explorer.root_path or "", "workspace", "root_path")
+        # Normalize path separators so the stored JSON is consistent across OSes.
+        open_files = [os.path.normpath(p) if p else p for p in open_files]
+        if active_file:
+            active_file = os.path.normpath(active_file)
+        root_path = self.explorer.root_path or ""
+        if root_path:
+            root_path = os.path.normpath(root_path)
+        self.config_manager.set(root_path, "workspace", "root_path")
         self.config_manager.set(open_files, "workspace", "open_files")
-        self.config_manager.set(active_file or "", "workspace", "active_file")
+        self.config_manager.set(active_file, "workspace", "active_file")
         self.config_manager.set(self._terminal_history, "workspace", "terminal_history")
 
-        root_path = self.explorer.root_path
         if root_path:
             self._save_workspace_file(root_path, open_files, active_file, self._terminal_history)
 
@@ -427,7 +444,7 @@ class MainWindow(QMainWindow):
         path = self._workspace_file_path(root_path)
         try:
             if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     return json.load(f)
         except Exception:
             pass
@@ -457,10 +474,14 @@ class MainWindow(QMainWindow):
     def _apply_workspace_data(self, data):
         open_files = data.get("open_files") or []
         for path in open_files:
+            if path:
+                path = os.path.normpath(path)
             if path and os.path.isfile(path):
                 self.abrir_arquivo_por_caminho(path)
 
         active_file = data.get("active_file")
+        if active_file:
+            active_file = os.path.normpath(active_file)
         if active_file and active_file in self.open_file_tabs:
             self.editor_tabs.setCurrentWidget(self.open_file_tabs[active_file])
 
@@ -576,7 +597,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(path, encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             self.criar_aba_editor(path, content)
         except Exception as exc:
@@ -827,8 +848,14 @@ class MainWindow(QMainWindow):
         system_text = self.codex_system.toPlainText().strip()
         prompt_text = self.codex_prompt.toPlainText().strip()
 
+        # Fall back to OPENAI_API_KEY env var if the field is empty.
+        api_key = resolve_api_key(api_key)
         if not api_key:
-            QMessageBox.warning(self, "Codex", "Informe sua OpenAI API key.")
+            QMessageBox.warning(
+                self,
+                "Codex",
+                "Informe sua OpenAI API key ou defina a variavel OPENAI_API_KEY.",
+            )
             return
         if not model:
             QMessageBox.warning(self, "Codex", "Informe o modelo.")
@@ -837,7 +864,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Codex", "Digite um prompt.")
             return
 
-        self.config_manager.set(api_key, "openai", "api_key")
+        # Persist only if the user typed a key explicitly (do not save the env var value).
+        if self.codex_api_key.text().strip():
+            self.config_manager.set(api_key, "openai", "api_key")
         self.config_manager.set(model, "openai", "model")
 
         try:

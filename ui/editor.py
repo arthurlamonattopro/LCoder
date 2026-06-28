@@ -1,8 +1,17 @@
 import re
 from collections import Counter
 
-from PySide6.QtCore import QRect, QSize, Qt, QStringListModel, QTimer
-from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextFormat
+from PySide6.QtCore import QRect, QSize, QStringListModel, Qt, QTimer
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QKeyEvent,
+    QPainter,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QTextCursor,
+    QTextFormat,
+)
 from PySide6.QtWidgets import QCompleter, QPlainTextEdit, QTextEdit, QWidget
 
 from core.languages import LANGUAGES
@@ -53,7 +62,7 @@ class CodeHighlighter(QSyntaxHighlighter):
 
     def _apply_word_list(self, text, words, fmt):
         for word in words:
-            for match in re.finditer(r"\\b" + re.escape(word) + r"\\b", text):
+            for match in re.finditer(r"\b" + re.escape(word) + r"\b", text):
                 self.setFormat(match.start(), match.end() - match.start(), fmt)
 
     def highlightBlock(self, text):
@@ -197,7 +206,7 @@ class Editor(QPlainTextEdit):
 
     def _extract_attr_map(self, text):
         attr_map = {}
-        for base, attr in re.findall(r"\\b([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)", text):
+        for base, attr in re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)", text):
             attr_map.setdefault(base, set()).add(attr)
         return attr_map
 
@@ -399,7 +408,7 @@ class Editor(QPlainTextEdit):
         block_text = cursor.block().text()
         pos = cursor.positionInBlock()
         left = block_text[:pos]
-        match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)?$", left)
+        match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)?$", left)
         if match:
             base = match.group(1)
             partial = match.group(2) or ""
@@ -471,7 +480,7 @@ class Editor(QPlainTextEdit):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             cursor = self.textCursor()
             block_text = cursor.block().text()[: cursor.positionInBlock()]
-            indent_match = re.match(r"^\\s*", block_text)
+            indent_match = re.match(r"^\s*", block_text)
             indent = indent_match.group(0) if indent_match else ""
             lang = self.get_current_language_config() or {}
             indent_cfg = lang.get("indent", {}) or {}

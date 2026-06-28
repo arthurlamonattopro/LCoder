@@ -3,7 +3,6 @@ import importlib.util
 import os
 import sys
 
-
 SKIP_IMPORT_BASES = {"self", "cls", "this"}
 
 

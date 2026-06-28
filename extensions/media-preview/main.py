@@ -24,7 +24,7 @@ MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
 
 
 def _read_text(path):
-    with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+    with open(path, encoding="utf-8", errors="ignore") as handle:
         return handle.read()
 
 

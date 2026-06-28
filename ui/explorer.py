@@ -2,10 +2,16 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QTreeWidget, QTreeWidgetItem, QVBoxLayout
+from PySide6.QtWidgets import (
+    QDialog,
+    QLabel,
+    QMessageBox,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+)
 
 from core.languages import LANGUAGES
-
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 

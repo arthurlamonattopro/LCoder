@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lcoder"
+version = "0.2.0"
+description = "Multi-language modular IDE built with PySide6"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Arthur Lamonatto", email = "arthurlamonattopro@users.noreply.github.com" },
+]
+dependencies = [
+    "PySide6>=6.6,<7",
+    "Pillow>=10,<12",
+    "watchdog>=3,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-cov>=4,<6",
+    "ruff>=0.4,<1",
+]
+
+[tool.setuptools]
+packages = ["core", "ui", "utils"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".venv",
+    "extensions",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "C4",  # flake8-comprehensions
+]
+ignore = [
+    "E501",   # line too long (we use ruff format instead)
+    "B008",   # do not perform function call in argument defaults (Qt needs it)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra -q"
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:PySide6.*",
+]

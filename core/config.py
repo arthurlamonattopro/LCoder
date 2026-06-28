@@ -1,6 +1,6 @@
+import copy
 import json
 import os
-
 
 DEFAULT_CONFIG = {
     "theme": "dark",
@@ -61,13 +61,14 @@ DEFAULT_CONFIG = {
 class ConfigManager:
     def __init__(self, config_file="ide_config.json"):
         self.config_file = config_file
-        self.current_config = DEFAULT_CONFIG.copy()
+        # Deep copy so tests / multiple instances do not mutate the shared default.
+        self.current_config = copy.deepcopy(DEFAULT_CONFIG)
         self.load()
 
     def load(self):
         try:
             if os.path.exists(self.config_file):
-                with open(self.config_file, "r", encoding="utf-8") as f:
+                with open(self.config_file, encoding="utf-8") as f:
                     loaded_config = json.load(f)
                     self._merge_config(self.current_config, loaded_config)
         except Exception as exc:

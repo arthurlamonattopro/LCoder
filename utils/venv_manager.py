@@ -109,7 +109,7 @@ def _load_state(root_path):
     path = _state_path(root_path)
     try:
         if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return json.load(f)
     except Exception:
         pass

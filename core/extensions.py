@@ -4,11 +4,8 @@ import os
 import sys
 from dataclasses import dataclass
 
-from PySide6.QtWidgets import QMessageBox
-
 from core.languages import LANGUAGES
 from core.themes import THEMES
-
 
 MANIFEST_FILES = ("extension.json", "package.json")
 DEFAULT_ACTIVATION_EVENTS = ["onStartupFinished"]
@@ -22,7 +19,7 @@ def _safe_listdir(path):
 
 
 def _read_json(path):
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -104,6 +101,10 @@ class LanguageRegistry:
         if not language_id or not isinstance(config, dict):
             return
 
+        indent = config.get("indent")
+        if not isinstance(indent, dict):
+            indent = {"size": 4, "use_tabs": False}
+
         normalized = {
             "name": config.get("name", language_id.title()),
             "extensions": config.get("extensions", []),
@@ -111,6 +112,8 @@ class LanguageRegistry:
             "executable": config.get("executable") or language_id,
             "run_args": config.get("run_args", ["{file}"]),
             "repl_args": config.get("repl_args", []),
+            "indent": indent,
+            "snippets": config.get("snippets", {}),
             "keywords": config.get("keywords", []),
             "functions": config.get("functions", []),
             "comment_prefix": config.get("comment_prefix", "#"),
@@ -120,7 +123,7 @@ class LanguageRegistry:
 
         LANGUAGES[language_id] = normalized
 
-        if self._config_manager.get("languages", language_id) is None:
+        if self._config_manager is not None and self._config_manager.get("languages", language_id) is None:
             self._config_manager.set({"path": ""}, "languages", language_id)
 
         self._log(f"[extensions] Language registered: {language_id}\n")
@@ -144,14 +147,19 @@ class WindowAPI:
         self._window = main_window
         self._commands = command_registry
 
+    def _message_box(self):
+        """Import QMessageBox lazily so the module can be imported headless."""
+        from PySide6.QtWidgets import QMessageBox
+        return QMessageBox
+
     def show_info(self, message, title="LCoder"):
-        QMessageBox.information(self._window, title, message)
+        self._message_box().information(self._window, title, message)
 
     def show_warning(self, message, title="LCoder"):
-        QMessageBox.warning(self._window, title, message)
+        self._message_box().warning(self._window, title, message)
 
     def show_error(self, message, title="LCoder"):
-        QMessageBox.critical(self._window, title, message)
+        self._message_box().critical(self._window, title, message)
 
     def set_status_message(self, message, timeout_ms=None):
         if timeout_ms is None:
